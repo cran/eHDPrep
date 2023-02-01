@@ -304,6 +304,8 @@ join_vars_to_ontol <- function(ontol_graph, var2entity_tbl, mode = "in", root, k
 #' \code{\link[tidygraph:tidygraph]{tidygraph}} format or coercible to this format.
 #' @param mode Character constant specifying the directionality of the edges.
 #'   One of: "in" or "out".
+#' @param IC_threshold Metavariables with IC less than this value will be
+#'   omitted from output. Default = 0 (no omission).
 #' @family semantic enrichment functions
 #' @importFrom tidygraph mutate map_local_int as_tibble filter graph_order
 #'   select pull map_local_lgl map_local arrange group_by ungroup
@@ -322,8 +324,8 @@ join_vars_to_ontol <- function(ontol_graph, var2entity_tbl, mode = "in", root, k
 #' join_vars_to_ontol(example_mapping_file, root = "root") -> joined_ontol
 #' 
 #' metavariable_info(joined_ontol)
-metavariable_info <- function(graph, mode = "in") {
-  message("Identifying semantic commonalities through metavariables...")
+metavariable_info <- function(graph, mode = "in", IC_threshold = 0) {
+  message("Identifying semantic commonalities...")
   start_time <- Sys.time()
   graph %>%
     # Minimum distance of each node to a variable node
@@ -383,14 +385,77 @@ metavariable_info <- function(graph, mode = "in") {
                         .data$information_content == max(dplyr::cur_data()$information_content)) %>%
     tidygraph::ungroup() ->
     res
+  
 
-  nrow(filter(res, .data$highest_IC & .data$is_metavariable))
+  if (IC_threshold > 0) {
+    original_nrow <- nrow(as_tibble(filter(res, .data$highest_IC & .data$is_metavariable)))
+    
+    res <- filter(res, .data$information_content >= IC_threshold)
+    thresholded_nrow <- nrow(as_tibble(filter(res, .data$highest_IC & .data$is_metavariable)))
+    nrow_removed <- original_nrow - thresholded_nrow 
+    
+    IC_threshold_msg <- paste0("\n", nrow_removed, " semantic commonalities were omitted as they did not meet the IC threshold (", IC_threshold, ").")
+    
+  } else {IC_threshold_msg = ""}
+
   message("Complete. Duration: ", as.character(round(as.numeric(Sys.time()-start_time),2)), " secs.\n",
           nrow(as_tibble(filter(res, .data$highest_IC & .data$is_metavariable))),
-          " semantic commonalities found (via most informative common ancestors).")
+          " semantic commonalities found (via common ontological ancestors).", IC_threshold_msg)
 
-  res
+  return(res)
 }
+
+
+#' Extract metavariables' descendant variables
+#'
+#' Formats the output of \code{\link{metavariable_info}} for easier
+#' interpretation of each metavariable's descendant variables
+#'
+#' Not part of the standard semantic enrichment pipeline as this function just
+#' produces a simplified version of the output of \code{\link{metavariable_info}}.
+#' 
+#' The output of \code{\link{metavariable_info}} is converted to a tibble,
+#' filtered to only include metavariables with highest information content for
+#' the variable set. The tibble has three columns describing a metavariable, its
+#' information content, and its descendant variables.
+#' 
+#' @seealso \code{\link{node_IC_zhou}}
+#' @param metavariable_info_output Output tibble of
+#'   \code{\link{metavariable_info}}
+#' @family semantic enrichment functions
+#' @importFrom tibble tibble
+#' @importFrom tidyr unnest
+#' @importFrom dplyr filter select arrange desc
+#' @importFrom magrittr %>%
+#' @importFrom rlang .data
+#' @return A tibble describing each metavariable, its
+#'   information content, and its descendant variables
+#' @export
+#'
+#' @examples
+#' data(example_ontology)
+#' require(magrittr)
+#' example_ontology %>%
+#' join_vars_to_ontol(example_mapping_file, root = "root") -> joined_ontol
+#'
+#' mv_info <- metavariable_info(joined_ontol)
+#' metavariable_variable_descendants(mv_info)
+metavariable_variable_descendants <- function(metavariable_info_output) {
+
+  out <- metavariable_info_output %>%
+    tibble::as_tibble() %>%
+    dplyr::filter(.data$is_metavariable & .data$highest_IC) %>%
+    dplyr::select(.data$name, .data$information_content, .data$variable_descendants) %>%
+    dplyr::arrange(dplyr::desc(.data$information_content)) %>%
+    rename(metavariable = .data$name) %>%
+    tidyr::unnest(.data$variable_descendants) %>%
+    rename(descendant_variable = .data$name)
+  
+  return(out)
+  
+}
+
+
 
 #' Aggregate Data by Metavariable
 #'
@@ -491,7 +556,7 @@ metavariable_agg <- function(graph, data, label_attr ="name", normalize_vals = T
   start_time <- Sys.time()
   start_ncol <- ncol(data)
   
-  message("Aggregating variables by semantic commonalities and appending to `data`...")
+  message("Aggregating variables with semantic commonalities to metavariables\nand appending to `data`...\nMetavariables will be labelled by the most informative common ancestor.")
   
   # filter graph to only Most Informative Common Ancestors (MICAs)
   graph %>%
@@ -551,8 +616,8 @@ metavariable_agg <- function(graph, data, label_attr ="name", normalize_vals = T
   }
   
   message("Complete. Duration: ", as.character(round(as.numeric(Sys.time()-start_time),2)), " secs.\n",
-          "The dataset has been enriched with ", ncol(data) - start_ncol, " new variables\n(",
-          zev, " new variables were not appended as they had zero entropy).")
+          "The dataset has been enriched with ", ncol(data) - start_ncol, " metavariables\n(",
+          zev, " metavariables had zero entropy and were therefore not appended).")
   
   return(data)
 }
@@ -640,4 +705,89 @@ prod_catchNAs <- function(x) {
   if(all(is.na(x))) {
     return(as.numeric(NA))
   } else{prod(x, na.rm = TRUE)}
+}
+
+#' Convert edge table to tidygraph graph
+#' 
+#' A edge table, as a data frame, is converted to a directed tidygraph
+#' \code{\link[tidygraph:tidygraph]{tidygraph}}. Column 1 of the edge table is
+#' interpreted as a "from" column, Column 2 is interpreted as a "to" column, and
+#' any further columns are interpreted as attributes of the entity/node recorded
+#' in column 1. Incomplete cases are removed from the edge table (rows) to avoid
+#' redundancy
+#' 
+#' @param edge_tbl data frame containing 'from' nodes in column 1 and 'to' nodes
+#'   in column 2 so that all nodes go 'towards' the root node
+#'
+#' @return \code{\link[tidygraph:tidygraph]{tidygraph}} representation of the edge table
+#' @export
+#'
+#' @examples
+#' # basic edge table
+#' edge_tbl <- tibble::tribble(~from, ~to,
+#' "Nstage", "TNM",
+#' "Tstage", "TNM",
+#' "Tumoursize", "property_of_tumour",
+#' "Tstage", "property_of_tumour",
+#' "property_of_tumour", "property_of_cancer",
+#' "TNM", "property_of_cancer",
+#' "property_of_cancer", "disease",
+#' "disease", "root",
+#' "root", NA)
+#' 
+#' graph <- edge_tbl_to_graph(edge_tbl)
+#' 
+#' graph
+#' 
+#' plot(graph)
+#' 
+#' 
+#' # edge table with node attributes
+#' ## note that root node is included in final row to include its label
+#' edge_tbl <- tibble::tribble(~from, ~to, ~label,
+#' "Nstage", "TNM", "N stage",
+#' "Tstage", "TNM", "T stage",
+#' "Tumoursize", "property_of_tumour", "Tumour size",
+#' "Tstage", "property_of_tumour", "T stage",
+#' "property_of_tumour", "property_of_cancer", "Property of tumour",
+#' "TNM", "property_of_cancer", "TNM",
+#' "property_of_cancer", "disease", "Property of cancer",
+#' "disease", "root", "Disease",
+#' "root", NA, "Ontology Root")
+#' graph <- edge_tbl_to_graph(edge_tbl)
+#' 
+#' graph
+#' 
+#' plot(graph)
+#' 
+edge_tbl_to_graph <- function(edge_tbl) {
+  
+  if(!is.data.frame(edge_tbl)) {
+    stop("`edge_tbl' must be a data frame")
+  } else {}
+  
+  graph <- edge_tbl %>%
+    dplyr::select(1,2) %>%
+    dplyr::filter(stats::complete.cases(.)) %>%
+    tidygraph::as_tbl_graph(directed = TRUE)
+  
+  # add node attributes
+  if (ncol(edge_tbl) > 2) {
+    message("More than two columns detected in `edge_tbl`. These will be joined to the graph as node attributes")
+    
+    node_attr <- edge_tbl %>%
+      rename(.from = 1) %>% # rename first column
+      dplyr::select(-2) %>% # remove 'to' (second) column
+      dplyr::distinct(dplyr::across(dplyr::everything())) # retain only distinct rows
+    
+    graph <- graph %>%
+      tidygraph::left_join(node_attr, by = c(name = ".from")) %>%
+      mutate()
+      
+  } else{}
+  
+  # quick validation
+  validate_ontol_nw(graph)
+  
+  return(graph)
 }

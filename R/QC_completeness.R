@@ -91,7 +91,7 @@ row_completeness <- function(data, id_var) {
     # transpose tibble
     tidyr::pivot_longer(-!!id_var, names_to="Variable", values_to=".tempvals") %>%
     tidyr::pivot_wider(names_from = !!id_var, values_from=".tempvals") %>%
-    dplyr::select(-.data$Variable) %>% # remove variable name column
+    dplyr::select(-"Variable") %>% # remove variable name column
     purrr::map_dfr(sum) %>% # sum NAs by row
     tidyr::pivot_longer(dplyr::everything(),
                         names_to = dplyr::as_label(id_var),
@@ -215,9 +215,8 @@ distant_neg_val <- function(data) {
 #'   information.
 #' @param show_rownames Boolean. Should rownames be shown. Default: False.
 #' @param ... Parameters to be passed to \code{\link[pheatmap]{pheatmap}}.
-#' @note If the heatmap overlaps with other plots on the current device, it 
-#' is recommended that users run the \code{\link[grid]{grid.newpage}} 
-#' function to ensure a clean page is used for this plot.
+#' @note See examples of how to plot using plot.new(). This is ensure a new plot
+#'   is created for the heatmap
 #' @importFrom tibble column_to_rownames
 #' @importFrom dplyr mutate matches everything if_else n_distinct select across
 #'   as_label all_of
@@ -235,9 +234,14 @@ distant_neg_val <- function(data) {
 #' <https://CRAN.R-project.org/package=pheatmap>.
 #' @examples
 #' data(example_data)
-#' completeness_heatmap(example_data,patient_id)
 #' 
-#' # with variable-level annotations
+#' # heatmap without variable category annotations:
+#' hm <- completeness_heatmap(example_data,patient_id)
+#' plot.new() # ensure new plot is created
+#' hm
+#' 
+#' 
+#' # heatmap with variable category annotations:
 #' ## create a dataframe containing variable annotations
 #' tibble::tribble(~"var", ~"datatype",
 #' "patient_id", "id",
@@ -253,7 +257,9 @@ distant_neg_val <- function(data) {
 #' "SNP_b", "genotype",
 #' "free_text", "freetext") -> data_types
 #' 
-#' completeness_heatmap(example_data,patient_id, annotation_tbl = data_types)
+#' hm <- completeness_heatmap(example_data,patient_id, annotation_tbl = data_types)
+#' plot.new() # ensure new plot is created
+#' hm
 completeness_heatmap <- function(data, id_var, annotation_tbl = NULL, method = 1, 
                                  show_rownames = FALSE, ...) {
   # fallback IDs, if not provided

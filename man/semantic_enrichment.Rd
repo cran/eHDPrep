@@ -4,16 +4,26 @@
 \alias{semantic_enrichment}
 \title{Semantic enrichment}
 \usage{
-semantic_enrichment(data, ontology, mapping_file, mode = "in", root, ...)
+semantic_enrichment(
+  data,
+  ontology,
+  mapping_file,
+  mode = "in",
+  root,
+  label_attr = "name",
+  ...
+)
 }
 \arguments{
-\item{data}{Numeric data frame or matrix containing variables present in
+\item{data}{Required. Numeric data frame or matrix containing variables present in
 the mapping file.}
 
-\item{ontology}{Graph containing the chosen ontology. Must be in
-test format or coercible to this format.}
+\item{ontology}{Required. One of: \itemize{\item Path to ontology edge table in .csv format (String)\item Edge
+table in data frame format \item Graph containing the chosen ontology -
+must be in \code{\link[tidygraph:tidygraph]{tidygraph}} format or coercible
+to this format.}.}
 
-\item{mapping_file}{Path to csv file or data frame containing mapping
+\item{mapping_file}{Required. Path to csv file or data frame containing mapping
 information. Should contain two columns only. The first column should
 contain column names, present in the data frame. The second column should
 contain the name of entities present in the ontology object.}
@@ -21,10 +31,13 @@ contain the name of entities present in the ontology object.}
 \item{mode}{Character constant specifying the directionality of the edges.
 One of: "in" or "out".}
 
-\item{root}{name of root node identifier in column 1 to calculate node depth
+\item{root}{Required. Name of root node identifier in column 1 to calculate node depth
 from.}
 
-\item{...}{additional arguments to pass to \code{\link[readr]{read_csv}}}
+\item{label_attr}{Node attribute containing labels used for column names when
+creating metavariable aggregations. Default: "name"}
+
+\item{...}{additional arguments to pass to \code{\link[readr]{read_csv}} when reading `mapping_file`.}
 }
 \value{
 Semantically enriched dataset
@@ -42,14 +55,6 @@ and product. Meta-variables with zero entropy (no information) are not
 appended to the data.
 See the "Semantic Enrichment" section in the vignette of 'eHDPrep' for more
 information: \code{vignette("Introduction_to_eHDPrep", package = "eHDPrep")}
-
-This function requires three inputs:
-\describe{
-\item{data}{a numeric data frame or matrix}
-\item{ontology}{an ontology in the form of a directed network graph}
-\item{mapping_file}{A mapping file/data frame linking variables in
-the data frame with nodes in the ontology object}
-}
 }
 \note{
 A warning may be shown regarding the '.add' argument being deprecated, this is

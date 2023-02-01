@@ -152,15 +152,14 @@ nums_to_NA <- function (data, ..., nums_to_replace = NULL) {
   if (missing(...)) {
     data %>%
       dplyr::mutate(dplyr::across(where(is.numeric),
-                                  NA_clean,
-                                  nums_to_replace)
+                                  function(x) NA_clean(x, nums_to_replace))
                     )
   } else {
     vars <- dplyr::enquos(...)
 
     data %>%
       dplyr::mutate(dplyr::across(.cols = c(!!! vars),
-                                  .fns = NA_clean, nums_to_replace)
+                                  .fns = function(x) NA_clean(x, nums_to_replace))
                     )
   }
 }
@@ -248,13 +247,11 @@ encode_bin_cat_vec <- function(x, values = NULL, numeric_out = FALSE) {
 
 encode_binary_cats <- function(data, ..., values = NULL) {
   warn_missing_dots(missing(...))
-  values <- dplyr::enquo(values)
   vars <- dplyr::enquos(...)
 
   data %>%
     dplyr::mutate(dplyr::across(c(!!! vars),
-                                encode_bin_cat_vec,
-                                values = !! values))
+                                function(x) encode_bin_cat_vec(x, values = values)))
 }
 
 ##' Encode ordinal variables
@@ -443,7 +440,7 @@ onehot_vec <- function(x, prefix) {
                        names_prefix = paste0(prefix,"_"),
                        names_repair = "universal") %>%
     suppressMessages() %>%
-    dplyr::select(-.data$rowname)
+    dplyr::select(-"rowname")
 }
 
 
@@ -637,7 +634,7 @@ ordinal_label_levels <- function(data, out_path = NULL) {
   data_ord %>%
     dplyr::mutate(dplyr::across(dplyr::everything(), as.numeric)) %>%
     tidyr::pivot_longer(dplyr::everything(), names_to = "variable", values_to = "level") %>%
-    dplyr::select(.data$level) ->
+    dplyr::select("level") ->
     levels 
   
   dplyr::bind_cols(labels, levels) %>%
