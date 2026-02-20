@@ -69,18 +69,23 @@
 assess_completeness <- function(data, id_var, plot = TRUE) {
 
   id_var <- dplyr::enquo(id_var)
-  compl_plt <- plot_completeness(data, !! id_var)
-  compl_hm <- completeness_heatmap(data, !! id_var)
+
+  compl_plt <- plot_completeness(data, !!id_var)
+  compl_hm  <- completeness_heatmap(data, !!id_var)
   
   res <- list(
     "variable_completeness" = variable_completeness(data),
-    "row_completeness" = row_completeness(data, !! id_var),
+    "row_completeness" = row_completeness(data, !!id_var),
     "completeness_plot" = compl_plt,
     "completeness_heatmap" = compl_hm,
-    "plot_completeness_heatmap" = function(i) { grid::grid.newpage(); i$completeness_heatmap } 
-    )
+    "plot_completeness_heatmap" = function(i) { 
+      if (!is.null(grDevices::dev.list())) grid::grid.newpage()
+      i$completeness_heatmap 
+    } 
+  )
 
-  if (plot) {
+  # Only print if a graphics device exists
+  if (plot && !is.null(grDevices::dev.list())) {
     print(compl_plt)
     devAskNewPage(ask = TRUE)
     grid::grid.newpage()
@@ -101,6 +106,9 @@ assess_completeness <- function(data, id_var, plot = TRUE) {
 #'   data frame (e.g. from dbplyr or dtplyr).
 #' @param id_var An unquoted  expression which corresponds to a variable (column) in
 #'   \code{data} which identifies each row (sample).
+#' @param consis_tbl Optional consistency table.
+#' @param plot Logical. Should completeness plots be printed?
+#'    Defaults to TRUE. Plots are only displayed when a graphics device is active.
 #' @inheritParams validate_consistency_tbl
 #' @inheritSection validate_consistency_tbl Consistency Table Requirements
 #' @return Nested list of quality measurements
@@ -173,7 +181,7 @@ assess_completeness <- function(data, id_var, plot = TRUE) {
 #' 
 #' # show any variables with zero entropy
 #' res$vars_with_zero_entropy
-assess_quality <- function(data, id_var, consis_tbl) {
+assess_quality <- function(data, id_var, consis_tbl, plot = TRUE) {
   
   if(missing(id_var)) {
     data <- tibble::rownames_to_column(data, var = "rowname")
@@ -181,7 +189,7 @@ assess_quality <- function(data, id_var, consis_tbl) {
   } else{id_var <- dplyr::enquo(id_var)}
 
   # assess completeness
-  completeness <- assess_completeness(data, !! id_var, plot = TRUE)
+  completeness <- assess_completeness(data, !! id_var, plot = plot)
 
   # internal consistency
   if (!missing(consis_tbl)) {
@@ -279,20 +287,24 @@ apply_quality_ctrl <- function(data, id_var, class_tbl, bin_cats = NULL, min_fre
   } else{}
 
   id_var <- dplyr::enquo(id_var)
-  
+
   data %>%
     strings_to_NA(dplyr::all_of(
       select_by_datatype(class_tbl, c("id","numeric", "integer", "double"), negate = TRUE))) %>%
-    encode_binary_cats(dplyr::all_of(select_by_datatype(class_tbl, c("character","factor"))), values = bin_cats) %>%
-    encode_ordinals(ord_levels = c("T1","T2","T3a", "T3b", "T4",NA), strict_levels = T,
-                       dplyr::all_of(select_by_datatype(class_tbl, "ordinal_tstage"))) %>%
-    encode_ordinals(ord_levels = c("N0","N1","N2",NA), strict_levels = T, 
-                       dplyr::all_of(select_by_datatype(class_tbl, "ordinal_nstage"))) %>%
-    encode_genotypes(dplyr::all_of(select_by_datatype(class_tbl, "genotype"))) %>%
+    {if (length(dplyr::all_of(select_by_datatype(class_tbl, c("character","factor")))) > 0)
+    {encode_binary_cats(., dplyr::all_of(select_by_datatype(class_tbl, c("character","factor"))), values = bin_cats)} else .} %>%
+    {if (length(dplyr::all_of(select_by_datatype(class_tbl, "ordinal_tstage"))) > 0)
+    {encode_ordinals(., ord_levels = c("T1","T2","T3a", "T3b", "T4",NA), strict_levels = T,
+                     dplyr::all_of(select_by_datatype(class_tbl, "ordinal_tstage")))} else .} %>%
+    {if (length(dplyr::all_of(select_by_datatype(class_tbl, "ordinal_nstage"))) > 0)
+    {encode_ordinals(., ord_levels = c("N0","N1","N2",NA), strict_levels = T,
+                     dplyr::all_of(select_by_datatype(class_tbl, "ordinal_nstage")))} else .} %>%
+    {if (length(dplyr::all_of(select_by_datatype(class_tbl, "genotype"))) > 0)
+    {encode_genotypes(.,dplyr::all_of(select_by_datatype(class_tbl, "genotype")))} else .} %>%
     {if(length(dplyr::all_of(select_by_datatype(class_tbl, "freetext"))) > 0) {
       extract_freetext(., id_var = !! id_var, min_freq = min_freq,
                        dplyr::all_of(select_by_datatype(class_tbl, "freetext")))
-      } else .} %>%
+    } else .} %>%
     suppressMessages() %>% # extract_freetext discusses input that user cant modify in this function
     encode_cats(dplyr::all_of(select_by_datatype(class_tbl, c("factor","character")))) %>%
     suppressWarnings() -> # encode_cats() will warn of (and ignore) binary cats
@@ -306,6 +318,7 @@ apply_quality_ctrl <- function(data, id_var, class_tbl, bin_cats = NULL, min_fre
 
   data
 }
+
 
 ###
 ###### review QC #####

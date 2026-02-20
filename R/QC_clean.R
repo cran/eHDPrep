@@ -291,22 +291,29 @@ encode_binary_cats <- function(data, ..., values = NULL) {
 ##'    select(t_stage)
 encode_ordinals <- function(data, ord_levels, ..., strict_levels = TRUE) {
 
+  # avoid R CMD check notes
+  name <- NULL
+  value <- NULL
+
   if (missing(...)) {
     warn_missing_dots(TRUE)
     return(invisible(data))
   } else {
     vars <- dplyr::enquos(...)
 
-    #check for missing levels
+    # check for missing levels
     data %>%
       dplyr::select(!!! vars) %>%
-      dplyr::summarise(dplyr::across(everything(), ~!.x %in% ord_levels)) %>%
-      # sum number of missing levels
-      dplyr::summarise(dplyr::across(c(!!! vars), sum)) %>%
-      tidyr::pivot_longer(dplyr::everything()) %>%
-      # filter variables with missing levels
+      tidyr::pivot_longer(dplyr::everything(), names_to = "name", values_to = "value") %>%
+      dplyr::group_by(name) %>%
+
+      dplyr::summarise(
+        value = sum(!as.character(.data$value) %in% ord_levels, na.rm = TRUE),
+        .groups = "drop"
+      ) %>%
       dplyr::filter(.data$value > 0) ->
       missing_levels
+
     
     # warn if any missing levels
     if(nrow(missing_levels) > 0 & strict_levels) {
@@ -477,6 +484,10 @@ onehot_vec <- function(x, prefix) {
 ##' # diabetes_type included below but was not modified:
 ##' select(encoded, starts_with("diabetes")) 
 encode_cats <- function(data, ...) {
+
+  # NSE safety for R CMD check
+  var <- lessthaneq_2_unique_vals <- n_unique <- NULL
+
   if (missing(...)) {
     warn_missing_dots(TRUE)
     return(invisible(data))
@@ -490,11 +501,10 @@ encode_cats <- function(data, ...) {
   # using encode_binary_cats()
   data %>%
     # count distinct values
-    dplyr::summarise(dplyr::across(dplyr::all_of(vars), dplyr::n_distinct, na.rm = T)) %>%
+    dplyr::summarise(dplyr::across(dplyr::all_of(vars), ~dplyr::n_distinct(.x, na.rm = T))) %>%
     # are there more than 2 distinct values (per variable)?
-    dplyr::summarise(dplyr::across(dplyr::all_of(vars), ~ .x <= 2)) %>%
-    pivot_longer(dplyr::everything(), names_to = "var", values_to = "lessthaneq_2_unique_vals") %>%
-    dplyr::filter(.data$lessthaneq_2_unique_vals) %>%
+    tidyr::pivot_longer(dplyr::everything(), names_to = "var", values_to = "n_unique") %>%
+    dplyr::filter(.data$n_unique <= 2) %>%
     dplyr::pull(.data$var) ->
     unchanged_vars
     
